@@ -1,0 +1,11 @@
+# Visual Studio Code workspace files
+*.code-workspace
+
+# VS Code build directory
+**/.vscode
+
+# Visual Studio directies
+**/.vs
+**/bin
+**/obj
+
