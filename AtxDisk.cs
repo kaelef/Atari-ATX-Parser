@@ -57,7 +57,12 @@ namespace AtxInfo
         enum SPT
         {
             NORMAL = 18,
-            ENHANCED =26
+            ENHANCED = 26
+        }
+        enum SectorSize
+        {
+            NORMAL = 128,
+            DOUBLE = 256
         }
 
         enum ChunkType
@@ -120,7 +125,7 @@ namespace AtxInfo
             public Byte sector_index;
             public UInt16 header_data;
         };
-        const int chunk_header_bytecount = 64;
+        const int chunk_header_bytecount = 8;
 
         class AtxSector
         {
@@ -138,6 +143,8 @@ namespace AtxInfo
             // Physical size of long sector (one of ATX_EXTENDESIZE)
             public UInt16 extendedsize;
         };
+
+        const int sector_header_bytecount = 8;
 
         class AtxTrack
         {
@@ -165,15 +172,25 @@ namespace AtxInfo
         atx_header _header;
 
         int _record_count = 0;
-        int _track_count = 0;
+        int _sectors_per_track = (int)SPT.NORMAL;
+        int _sector_size = (int)SectorSize.NORMAL;
+        int _sector_data_bytes = 0;
 
         List<AtxTrack> _tracks = new List<AtxTrack>();
 
+        /*
+         * Read EXTENDED_DATA CHUNK type
+         */
         bool _load_extended_sector_chunk(chunk_header chunkhdr, AtxTrack track, BinaryReader reader)
         {
+            if (chunkhdr.length != chunk_header_bytecount)
+            {
+                Console.WriteLine($"\tERROR: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
+            }
+
             if (chunkhdr.sector_index >= track.sector_count)
             {
-                Console.WriteLine("ERROR: Extended sector index > track sector count");
+                Console.WriteLine("\tERROR: Extended sector index > track sector count");
                 return false;
             }
 
@@ -193,45 +210,80 @@ namespace AtxInfo
                     xsize = 1024;
                     break;
                 default:
-                    Console.WriteLine($"ERROR: Invalid extended sector value {chunkhdr.header_data}");
+                    Console.WriteLine($"\tERROR: Invalid extended sector value {chunkhdr.header_data}");
                     return false;
             }
 
             track.sectors[chunkhdr.sector_index].extendedsize = xsize;
-            Console.WriteLine($"Extended sector: index={chunkhdr.sector_index}, num={track.sectors[chunkhdr.sector_index].number}, size={xsize}");
+
+            int sector_number = track.sectors[chunkhdr.sector_index].number;
+            int overall_sector_number = track.track_number * _sectors_per_track + sector_number;
+            Console.WriteLine($"\tExtended sector: index={chunkhdr.sector_index}, num={sector_number} ({overall_sector_number}, ${overall_sector_number:x3}), size={xsize}");
 
             return true;
         }
 
+        /*
+         * Read WEAK_SECTOR CHUNK type
+         */
         bool _load_weak_sector_chunk(chunk_header chunkhdr, AtxTrack track, BinaryReader reader)
         {
+            if(chunkhdr.length != chunk_header_bytecount)
+            {
+                Console.WriteLine($"\tERROR: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
+            }
             if(chunkhdr.sector_index >= track.sector_count)
             {
-                Console.WriteLine("ERROR: Weak sector index > track sector count");
+                Console.WriteLine("\tERROR: Weak sector index > track sector count");
                 return false;
             }
 
             track.sectors[chunkhdr.sector_index].weakoffset = chunkhdr.header_data;
-            Console.WriteLine($"Weak sector: index={chunkhdr.sector_index}, num={track.sectors[chunkhdr.sector_index].number}, offset={chunkhdr.header_data}");
+
+            int sector_number = track.sectors[chunkhdr.sector_index].number;
+            int overall_sector_number = track.track_number * _sectors_per_track + sector_number;
+            Console.WriteLine($"\tWeak sector: index={chunkhdr.sector_index}, num={sector_number} ({overall_sector_number}, ${overall_sector_number:x3}), offset={chunkhdr.header_data}");
 
             return true;
         }
-        bool _load_sector_data_chunk(AtxTrack track, BinaryReader reader)
-        {
-            if (track.sector_count == 0)
-                return true;
 
-            int sector_size = (Density)_header.density == Density.DOUBLE ? 256 : 128;
-            int read_bytes = track.sector_count * sector_size;
-            Console.WriteLine($"Reading {track.sector_count} * {sector_size} = {read_bytes} bytes of track sector data");
+        /*
+         * Read SECTOR_DATA CHUNK type
+         */
+        bool _load_sector_data_chunk(chunk_header chunkhdr, AtxTrack track, BinaryReader reader)
+        {
+            int data_size = (int)chunkhdr.length - chunk_header_bytecount;
+
+            if (track.sectors.Any() == false)
+            {
+                Console.WriteLine($"\tWARNING: SECTOR_DATA chunk presented before SECTOR_LIST chunk");
+            }
+            else
+            {
+                int actual_sectors = 0;
+                string missing_sectors = "";
+                foreach(var s in track.sectors)
+                {
+                    if ((s.status & (byte)SectorStatus.MISSING_DATA) == 0)
+                        actual_sectors++;
+                    else
+                        missing_sectors = "; missing sectors accounted for";
+                }
+                int calculated_bytes = actual_sectors * _sector_size;
+
+                if (data_size != calculated_bytes)
+                    Console.WriteLine($"\tWARNING: Chunk data size as given in header ({data_size:N0}) != expected size ({actual_sectors} * {_sector_size} = {calculated_bytes:N0}){missing_sectors}");
+            }
+
+            Console.WriteLine($"\tReading {data_size:N0} bytes of track sector data");
 
             try
             {
-                track.data = reader.ReadBytes(read_bytes);
+                track.data = reader.ReadBytes(data_size);
             }
             catch
             {
-                Console.WriteLine($"ERROR: Failed to read sector data");
+                Console.WriteLine($"\tERROR: Failed to read sector data");
                 return false;
             }
 
@@ -246,15 +298,24 @@ namespace AtxInfo
             */
             track.offset_to_data_start = track.record_bytes_read;
             // Keep a count of how many bytes we've read into the Track Record
-            track.record_bytes_read += read_bytes;
+            track.record_bytes_read += data_size;
+
+            _sector_data_bytes += data_size;
 
             return true;
         }
 
-        bool _load_sector_list_chunk(AtxTrack track, BinaryReader reader)
+        /*
+         * Read SECTOR_LIST CHUNK type
+         */
+        bool _load_sector_list_chunk(chunk_header chunkhdr, AtxTrack track, BinaryReader reader)
         {
+            int expected = chunk_header_bytecount + track.sector_count * sector_header_bytecount;
+            if (chunkhdr.length != expected)
+                Console.WriteLine($"\tWARNING: Chunk length {chunkhdr.length} != expected ({expected})");
+
             // Try to read sector data for sector_count sectors
-            for(int i = 0; i < track.sector_count; i++)
+            for (int i = 0; i < track.sector_count; i++)
             {
                 AtxSector sect = new AtxSector();
                 try
@@ -264,20 +325,20 @@ namespace AtxInfo
                     sect.position = reader.ReadUInt16();
                     sect.start_data = reader.ReadUInt32();
 
-                    track.record_bytes_read += 64;
+                    track.record_bytes_read += sector_header_bytecount;
                 }
                 catch
                 {
-                    Console.WriteLine($"ERROR: Failed to read sector list header for sector {i + 1}");
+                    Console.WriteLine($"\tERROR: Failed to read sector list header for sector at index {i}");
                     return false;
                 }
 
-                if (sect.position >= ANGULAR_UNIT_COUNT)
-                    Console.WriteLine($"WARNING: Sector angular position {sect.position} > {ANGULAR_UNIT_COUNT - 1}");
+                int overall_sector_number = track.track_number * _sectors_per_track + sect.number;
+                string overall = $"({overall_sector_number}, ${overall_sector_number:x3})";
 
-                if(sect.status != 0)
+                if (sect.status != 0)
                 {
-                    Console.Write($"Sector index={i}, num={sect.number}, flags=");
+                    Console.Write($"\tSector index={i}, num={sect.number} {overall}, flags=");
                     if ((sect.status & (byte)SectorStatus.DELETED) != 0)
                         Console.Write("DELETED ");
                     if ((sect.status & (byte)SectorStatus.MISSING_DATA) != 0)
@@ -292,15 +353,19 @@ namespace AtxInfo
 
                     if ((sect.status & ~(byte)(SectorStatus.DELETED | SectorStatus.MISSING_DATA |
                         SectorStatus.EXTENDED | SectorStatus.FDC_CRC_ERROR | SectorStatus.FDC_LOSTDATA_ERROR)) != 0)
-                        Console.WriteLine($"WARNING: Unknown sector status flag 0x{sect.status:X2}");
+                        Console.WriteLine($"\tWARNING: Unknown sector status flag 0x{sect.status:X2}");
                 }
+
+                if (sect.position >= ANGULAR_UNIT_COUNT)
+                    Console.WriteLine($"\tWARNING: Sector index={i}, num={sect.number} {overall}, angular position {sect.position} > {ANGULAR_UNIT_COUNT - 1}");
+
 
                 // See if this is a duplicate
                 foreach (var s in track.sectors)
                 {
                     if(s.number == sect.number)
                     {
-                        Console.WriteLine($"DUPLICATE track {track.track_number}: sector #{sect.number:D2}");
+                        Console.WriteLine($"\tDUPLICATE sector #{sect.number:D2} {overall}");
                         break;
                     }
                 }
@@ -309,23 +374,30 @@ namespace AtxInfo
                 track.sectors.Add(sect);
             }
 
-            Console.WriteLine($"Read {track.sectors.Count} sector headers for track {track.track_number}");
+            Console.WriteLine($"\tRead {track.sectors.Count} sector headers for track {track.track_number}");
 
-            return true;
-        }
-        bool _load_unknown_chunk(chunk_header chunkhdr, BinaryReader reader)
-        {
-            Console.WriteLine($"WARNING: Unknown chunk type length {chunkhdr.length}");
             return true;
         }
 
         /*
-            Returns:
-            0 = Ok
-            1 = Done (reached terminator chunk)
-           -1 = Error
-        */
-        int _load_track_chunk(track_header trkhdr, AtxTrack track, BinaryReader reader)
+         * Read UNKNOWN CHUNK type
+         */
+        bool _load_unknown_chunk(chunk_header chunkhdr, BinaryReader reader)
+        {
+            Console.WriteLine($"WARNING: Unknown chunk type");
+            return true;
+        }
+
+        /*
+         * Read a TRACK CHUNK
+         * Expected types are SECTOR_DATA, SECTOR_LIST, WEAK_SECTOR, and EXTENDED_HEADER
+         * 
+         * Returns:
+         *   0 = Ok
+         *   1 = Done (reached terminator chunk)
+         *  -1 = Error
+         */
+        int _load_track_chunk(track_header trkhdr, AtxTrack track, BinaryReader reader, int chunkcount)
         {
             chunk_header chunkhdr;
             try 
@@ -337,7 +409,7 @@ namespace AtxInfo
             }
             catch
             {
-                Console.WriteLine("ERROR: Failed to read chunk header");
+                Console.WriteLine("  ERROR: Failed to read chunk header");
                 return -1;
             };
 
@@ -347,7 +419,7 @@ namespace AtxInfo
             // Check for a terminating marker
             if (chunkhdr.length == 0)
             {
-                Console.WriteLine("Reached track chunk terminator");
+                Console.WriteLine("  Chunk terminator");
                 return 1; // 1 = done
             }
 
@@ -357,16 +429,16 @@ namespace AtxInfo
             else
                 chunktype = $"UNKNOWN ({chunkhdr.type})";
 
-            Console.WriteLine($"Chunk type={chunktype}, size={chunkhdr.length}, secIndex={chunkhdr.sector_index}, hdrData=0x{chunkhdr.header_data:X4}");
+            Console.WriteLine($"  Chunk #{chunkcount} type={chunktype}, size={chunkhdr.length}, secIndex={chunkhdr.sector_index}, hdrData=0x{chunkhdr.header_data:X4}");
 
             switch((ChunkType)chunkhdr.type)
             {
                 case ChunkType.SECTOR_LIST:
-                    if (false == _load_sector_list_chunk(track, reader))
+                    if (false == _load_sector_list_chunk(chunkhdr, track, reader))
                         return -1;
                     break;
                 case ChunkType.SECTOR_DATA:
-                    if (false == _load_sector_data_chunk(track, reader))
+                    if (false == _load_sector_data_chunk(chunkhdr, track, reader))
                         return -1;
                     break;
                 case ChunkType.WEAK_SECTOR:
@@ -398,6 +470,9 @@ namespace AtxInfo
             Console.WriteLine();
         }
 
+        /*
+         * Parses a TRACK record type by reading its constitute CHUNKS
+         */
         bool _load_track_record(UInt32 length, BinaryReader reader)
         {
             track_header trkhdr;
@@ -419,11 +494,11 @@ namespace AtxInfo
                 return false;
             }
 
-            if (trkhdr.track_number != _track_count)
-                Console.WriteLine($"WARNING: Expecting track #{_track_count} but got #{trkhdr.track_number}");
+            if (trkhdr.track_number != _tracks.Count)
+                Console.WriteLine($"WARNING: Expecting track #{_tracks.Count} but got #{trkhdr.track_number}");
 
-            if (trkhdr.track_number > 40 || _track_count > 40)
-                Console.WriteLine($"WARNING: More than 40 tracks");
+            if (trkhdr.track_number >= 40)
+                Console.WriteLine($"WARNING: Track # greater than 40");
 
             // See if this track number already exists
             foreach(var t in _tracks)
@@ -442,13 +517,11 @@ namespace AtxInfo
             track.flags = trkhdr.flags;
             _tracks.Add(track);
 
-            _track_count++;
-
-            Console.WriteLine($"Track #{track.track_number}: sectors={track.sector_count}, rate={track.rate}");
+            Console.WriteLine($"Track #{track.track_number:D2}: sectors={track.sector_count}, rate={track.rate}");
 
             if (track.flags != 0)
             {
-                Console.Write($"  Flags: ");
+                Console.Write($"  Track flags: ");
                 if ((track.flags & (uint)TrackFlags.MFM) == (uint)TrackFlags.MFM)
                     Console.Write("MFM ");
                 if ((track.flags & (uint)TrackFlags.UNKNOWN_SKEW) == (uint)TrackFlags.UNKNOWN_SKEW)
@@ -459,9 +532,8 @@ namespace AtxInfo
                     Console.WriteLine($"WARNING: Unknown track flags 0x{track.flags:X8}");
             }
 
-            int sectors_per_track = _header.density == (byte)Density.MEDIUM ? 26 : 18;
-            if (track.sector_count != sectors_per_track)
-                Console.WriteLine($"WARNING: Track sector count ({track.sector_count}) != {sectors_per_track}");
+            if (track.sector_count != _sectors_per_track)
+                Console.WriteLine($"WARNING: Track sector count ({track.sector_count}) != {_sectors_per_track}");
 
             // Keep a count of how many bytes we've read into the Track Record
             // So far we've read record_header + track_header bytes into this record
@@ -487,12 +559,15 @@ namespace AtxInfo
             }
 
             // Read all the chunks in the track
-            int i;
-            while ((i = _load_track_chunk(trkhdr, track, reader)) == 0) ;
+            int i, j = 0;
+            while ((i = _load_track_chunk(trkhdr, track, reader, ++j)) == 0) ;
 
             return i == 1; // Return FALSE on error condition
         }
 
+        /*
+         * Parses a HOST or OTHER record type by simply dumping its contents
+         */
         bool _load_other_record(UInt32 length, UInt16 typeval, BinaryReader reader)
         {
             int recsize = (int)(length - record_header_bytecount);
@@ -517,16 +592,18 @@ namespace AtxInfo
             return true;
         }
 
+        /*
+         * Loads a "record" from the ATX file. This can be either a TRACK or HOST record
+         */
         bool _load_next_record(BinaryReader reader)
         {
-            _record_count++;
-
             record_header rec;
             try
             {
                 rec.length = reader.ReadUInt32();
                 rec.type = reader.ReadUInt16();
                 rec.reserved = reader.ReadUInt16();
+                _record_count++;
             }
             catch (EndOfStreamException)
             {
@@ -548,6 +625,9 @@ namespace AtxInfo
             
         }
 
+        /*
+         * Seek to the first record in the ATX file and keep loading records as long as they exist
+         */
         bool _load_atx_data(BinaryReader reader)
         {
             // Seek to the start of ATX record data as specified in the header
@@ -566,7 +646,7 @@ namespace AtxInfo
             if(_tracks.Count < 40)
                 Console.WriteLine($"WARNING: Track count {_tracks.Count} is less than 40");
 
-            Console.WriteLine("ATX data load complete");
+            Console.WriteLine($"ATX data load complete. Records={_record_count}, Tracks={_tracks.Count}, Data Bytes={_sector_data_bytes:N0}");
             return true;
         }
 
@@ -601,6 +681,9 @@ namespace AtxInfo
                 _header.reserved2 = reader.ReadUInt16();
                 _header.start = reader.ReadUInt32();
                 _header.end = reader.ReadUInt32();
+
+                _sectors_per_track = _header.density == (byte)Density.MEDIUM ? (int)SPT.ENHANCED : (int)SPT.NORMAL;
+                _sector_size = _header.density == (byte)Density.DOUBLE ? (int)SectorSize.DOUBLE : (int)SectorSize.NORMAL;
 
                 Console.WriteLine($"Version: {_header.version}; {_header.min_version}");
 
