@@ -254,7 +254,7 @@ namespace AtxInfo
         {
             int data_size = (int)chunkhdr.length - chunk_header_bytecount;
 
-            if (track.sectors.Any() == false)
+            if (track.sector_count > 0 && track.sectors.Any() == false)
             {
                 Console.WriteLine($"\tWARNING: SECTOR_DATA chunk presented before SECTOR_LIST chunk");
             }
