@@ -175,6 +175,7 @@ namespace AtxInfo
         int _sectors_per_track = (int)SPT.NORMAL;
         int _sector_size = (int)SectorSize.NORMAL;
         int _sector_data_bytes = 0;
+        bool _verbose = false;
 
         List<AtxTrack> _tracks = new List<AtxTrack>();
 
@@ -356,6 +357,11 @@ namespace AtxInfo
                         Console.WriteLine($"\tWARNING: Unknown sector status flag 0x{sect.status:X2}");
                 }
 
+                if(sect.number > _sectors_per_track)
+                    Console.WriteLine($"\tWARNING: Sector index={i}, number={sect.number} > {_sectors_per_track}");
+                if(sect.number == 0)
+                    Console.WriteLine($"\tWARNING: Sector index={i} has sector #0");
+
                 if (sect.position >= ANGULAR_UNIT_COUNT)
                     Console.WriteLine($"\tWARNING: Sector index={i}, num={sect.number} {overall}, angular position {sect.position} > {ANGULAR_UNIT_COUNT - 1}");
 
@@ -375,6 +381,13 @@ namespace AtxInfo
             }
 
             Console.WriteLine($"\tRead {track.sectors.Count} sector headers for track {track.track_number}");
+
+            // Report on any missing sectors
+            for(int i = 1; i <= _sectors_per_track; i++)
+            {
+                if(track.sectors.Find(x => x.number == i) == null)
+                    Console.WriteLine($"\tMISSING sector #{i}");
+            }
 
             return true;
         }
@@ -707,6 +720,11 @@ namespace AtxInfo
                 return _load_atx_data(reader);
             }
 
+        }
+
+        public AtxDisk(bool verbose = false)
+        {
+            _verbose = verbose;
         }
 
     }
