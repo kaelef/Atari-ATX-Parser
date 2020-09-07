@@ -186,12 +186,12 @@ namespace AtxInfo
         {
             if (chunkhdr.length != chunk_header_bytecount)
             {
-                Console.WriteLine($"\tERROR: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
+                Console.WriteLine($"\tERROR:: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
             }
 
             if (chunkhdr.sector_index >= track.sector_count)
             {
-                Console.WriteLine("\tERROR: Extended sector index > track sector count");
+                Console.WriteLine("\tERROR:: Extended sector index > track sector count");
                 return false;
             }
 
@@ -211,7 +211,7 @@ namespace AtxInfo
                     xsize = 1024;
                     break;
                 default:
-                    Console.WriteLine($"\tERROR: Invalid extended sector value {chunkhdr.header_data}");
+                    Console.WriteLine($"\tERROR:: Invalid extended sector value {chunkhdr.header_data}");
                     return false;
             }
 
@@ -231,11 +231,11 @@ namespace AtxInfo
         {
             if(chunkhdr.length != chunk_header_bytecount)
             {
-                Console.WriteLine($"\tERROR: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
+                Console.WriteLine($"\tERROR:: Chunk length {chunkhdr.length} != expected ({chunk_header_bytecount})");
             }
             if(chunkhdr.sector_index >= track.sector_count)
             {
-                Console.WriteLine("\tERROR: Weak sector index > track sector count");
+                Console.WriteLine("\tERROR:: Weak sector index > track sector count");
                 return false;
             }
 
@@ -257,7 +257,7 @@ namespace AtxInfo
 
             if (track.sector_count > 0 && track.sectors.Any() == false)
             {
-                Console.WriteLine($"\tWARNING: SECTOR_DATA chunk presented before SECTOR_LIST chunk");
+                Console.WriteLine($"\tWARNING:: SECTOR_DATA chunk presented before SECTOR_LIST chunk");
             }
             else
             {
@@ -273,7 +273,7 @@ namespace AtxInfo
                 int calculated_bytes = actual_sectors * _sector_size;
 
                 if (data_size != calculated_bytes)
-                    Console.WriteLine($"\tWARNING: Chunk data size as given in header ({data_size:N0}) != expected size ({actual_sectors} * {_sector_size} = {calculated_bytes:N0}){missing_sectors}");
+                    Console.WriteLine($"\tWARNING:: Chunk data size as given in header ({data_size:N0}) != expected size ({actual_sectors} * {_sector_size} = {calculated_bytes:N0}){missing_sectors}");
             }
 
             Console.WriteLine($"\tReading {data_size:N0} bytes of track sector data");
@@ -284,7 +284,7 @@ namespace AtxInfo
             }
             catch
             {
-                Console.WriteLine($"\tERROR: Failed to read sector data");
+                Console.WriteLine($"\tERROR:: Failed to read sector data");
                 return false;
             }
 
@@ -313,7 +313,7 @@ namespace AtxInfo
         {
             int expected = chunk_header_bytecount + track.sector_count * sector_header_bytecount;
             if (chunkhdr.length != expected)
-                Console.WriteLine($"\tWARNING: Chunk length {chunkhdr.length} != expected ({expected})");
+                Console.WriteLine($"\tWARNING:: Chunk length {chunkhdr.length} != expected ({expected})");
 
             // Try to read sector data for sector_count sectors
             for (int i = 0; i < track.sector_count; i++)
@@ -330,7 +330,7 @@ namespace AtxInfo
                 }
                 catch
                 {
-                    Console.WriteLine($"\tERROR: Failed to read sector list header for sector at index {i}");
+                    Console.WriteLine($"\tERROR:: Failed to read sector list header for sector at index {i}");
                     return false;
                 }
 
@@ -354,16 +354,16 @@ namespace AtxInfo
 
                     if ((sect.status & ~(byte)(SectorStatus.DELETED | SectorStatus.MISSING_DATA |
                         SectorStatus.EXTENDED | SectorStatus.FDC_CRC_ERROR | SectorStatus.FDC_LOSTDATA_ERROR)) != 0)
-                        Console.WriteLine($"\tWARNING: Unknown sector status flag 0x{sect.status:X2}");
+                        Console.WriteLine($"\tWARNING:: Unknown sector status flag 0x{sect.status:X2}");
                 }
 
                 if(sect.number > _sectors_per_track)
-                    Console.WriteLine($"\tWARNING: Sector index={i}, number={sect.number} > {_sectors_per_track}");
+                    Console.WriteLine($"\tWARNING:: Sector index={i}, number={sect.number} > {_sectors_per_track}");
                 if(sect.number == 0)
-                    Console.WriteLine($"\tWARNING: Sector index={i} has sector #0");
+                    Console.WriteLine($"\tWARNING:: Sector index={i} has sector #0");
 
                 if (sect.position >= ANGULAR_UNIT_COUNT)
-                    Console.WriteLine($"\tWARNING: Sector index={i}, num={sect.number} {overall}, angular position {sect.position} > {ANGULAR_UNIT_COUNT - 1}");
+                    Console.WriteLine($"\tWARNING:: Sector index={i}, num={sect.number} {overall}, angular position {sect.position} > {ANGULAR_UNIT_COUNT - 1}");
 
 
                 // See if this is a duplicate
@@ -397,7 +397,7 @@ namespace AtxInfo
          */
         bool _load_unknown_chunk(chunk_header chunkhdr, BinaryReader reader)
         {
-            Console.WriteLine($"WARNING: Unknown chunk type");
+            Console.WriteLine($"WARNING:: Unknown chunk type");
             return true;
         }
 
@@ -422,7 +422,7 @@ namespace AtxInfo
             }
             catch
             {
-                Console.WriteLine("  ERROR: Failed to read chunk header");
+                Console.WriteLine("  ERROR:: Failed to read chunk header");
                 return -1;
             };
 
@@ -503,22 +503,22 @@ namespace AtxInfo
             }
             catch
             {
-                Console.WriteLine("ERROR: Failed to read track header");
+                Console.WriteLine("ERROR:: Failed to read track header");
                 return false;
             }
 
             if (trkhdr.track_number != _tracks.Count)
-                Console.WriteLine($"WARNING: Expecting track #{_tracks.Count} but got #{trkhdr.track_number}");
+                Console.WriteLine($"WARNING:: Expecting track #{_tracks.Count} but got #{trkhdr.track_number}");
 
             if (trkhdr.track_number >= 40)
-                Console.WriteLine($"WARNING: Track # greater than 40");
+                Console.WriteLine($"WARNING:: Track # greater than 40");
 
             // See if this track number already exists
             foreach(var t in _tracks)
             {   
                 if(t.track_number == trkhdr.track_number)
                 {
-                    Console.WriteLine($"WARNING: Track #{trkhdr.track_number} already exists");
+                    Console.WriteLine($"WARNING:: Track #{trkhdr.track_number} already exists");
                     break;
                 }
             }
@@ -542,11 +542,11 @@ namespace AtxInfo
                 Console.WriteLine();
 
                 if ((track.flags & ~((uint)TrackFlags.MFM | (uint)TrackFlags.UNKNOWN_SKEW)) != 0)
-                    Console.WriteLine($"WARNING: Unknown track flags 0x{track.flags:X8}");
+                    Console.WriteLine($"WARNING:: Unknown track flags 0x{track.flags:X8}");
             }
 
-            if (track.sector_count != _sectors_per_track)
-                Console.WriteLine($"WARNING: Track sector count ({track.sector_count}) != {_sectors_per_track}");
+            if (_verbose && track.sector_count != _sectors_per_track)
+                Console.WriteLine($"WARNING:: Track sector count ({track.sector_count}) != {_sectors_per_track}");
 
             // Keep a count of how many bytes we've read into the Track Record
             // So far we've read record_header + track_header bytes into this record
@@ -564,7 +564,7 @@ namespace AtxInfo
                 catch
                 {
 
-                    Console.WriteLine($"ERROR: Failed to seek {chunk_start_offset} bytes to first chunk in track record");
+                    Console.WriteLine($"ERROR:: Failed to seek {chunk_start_offset} bytes to first chunk in track record");
                     return false;
                 }
                 // Keep a count of how many bytes we've read into the Track Record
@@ -586,9 +586,9 @@ namespace AtxInfo
             int recsize = (int)(length - record_header_bytecount);
 
             if ((RecordType)typeval == RecordType.HOST)
-                Console.WriteLine($"WARNING: HOST record type ({recsize} bytes)");
+                Console.WriteLine($"NOTE: HOST record type ({recsize} bytes)");
             else
-                Console.WriteLine($"WARNING: UNKNOWN ({typeval}) record type ({recsize} bytes)");
+                Console.WriteLine($"WARNING:: UNKNOWN ({typeval}) record type ({recsize} bytes)");
 
             try
             {
@@ -598,7 +598,7 @@ namespace AtxInfo
             catch
             {
 
-                Console.WriteLine("ERROR: Failed to seek past this record");
+                Console.WriteLine("ERROR:: Failed to seek past this record");
                 return false;
             }
 
@@ -627,7 +627,7 @@ namespace AtxInfo
             catch
             {
 
-                Console.WriteLine($"ERROR: Failed to read header for record #{_record_count}");
+                Console.WriteLine($"ERROR:: Failed to read header for record #{_record_count}");
                 return false;
             }
 
@@ -650,14 +650,14 @@ namespace AtxInfo
             }
             catch
             {
-                Console.WriteLine("ERROR: Failed to seek to start of ATX record data");
+                Console.WriteLine("ERROR:: Failed to seek to start of ATX record data");
                 return false;
             }
 
             while (_load_next_record(reader)) ;
 
             if(_tracks.Count < 40)
-                Console.WriteLine($"WARNING: Track count {_tracks.Count} is less than 40");
+                Console.WriteLine($"WARNING:: Track count {_tracks.Count} is less than 40");
 
             Console.WriteLine($"ATX data load complete. Records={_record_count}, Tracks={_tracks.Count}, Data Bytes={_sector_data_bytes:N0}");
             return true;
@@ -677,7 +677,7 @@ namespace AtxInfo
                 _header.magic = reader.ReadChars(4);
                 if (_header.magic.Take(4).SequenceEqual("AT8X") == false)
                 {
-                    Console.WriteLine("ERROR: File missing AT8X header");
+                    Console.WriteLine("ERROR:: File missing AT8X header");
                     return false;
                 }
 
@@ -715,7 +715,16 @@ namespace AtxInfo
                 Console.WriteLine($"    End: {_header.end:N0}");
 
                 if (info.Length != _header.end)
-                    Console.WriteLine("WARNING: Header end field doesn't match file size");
+                {
+                    // Creator ATX_CR_WH2PC is known to add a HOST record at the end of the file and not include
+                    // its length in the ATX header "end" field.
+                    if((CreatorId)_header.creator == CreatorId.ATX_CR_WH2PC && info.Length == _header.end + 48)
+                    {
+                            Console.WriteLine($"NOTE: Creator ATX_CR_WH2PC does not include HOST record length in header 'end' field value");
+                    }
+                    else
+                        Console.WriteLine($"WARNING:: Header end field {_header.end:N0} doesn't match file size {info.Length:N0} (diff={(_header.end - info.Length):N0})");
+                }
 
                 return _load_atx_data(reader);
             }
