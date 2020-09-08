@@ -11,6 +11,7 @@ namespace AtxInfo
     {
         enum SectorStatus
         {
+            FDC_DATAREQ_PENDING = 0x02,
             // Sector data exists but is incomplete
             FDC_LOSTDATA_ERROR = 0x04,
             // Sector data exists but is incorrect
@@ -28,10 +29,11 @@ namespace AtxInfo
 
         enum CreatorId
         {
-            TX_CR_FX7 = 0x01,
+            ATX_CR_FX7 = 0x01,
             ATX_CR_FX8 = 0x02,
             ATX_CR_ATR = 0x03,
-            ATX_CR_WH2PC = 0x10
+            ATX_CR_WH2PC = 0x10,
+            ATX_CR_A8DISKUTILS = 0x74
         }
         enum ExtendedSize
         {
@@ -350,10 +352,13 @@ namespace AtxInfo
                         Console.Write("CRC_ERROR ");
                     if ((sect.status & (byte)SectorStatus.FDC_LOSTDATA_ERROR) != 0)
                         Console.Write("LOSTDATA_ERROR");
+                    if ((sect.status & (byte)SectorStatus.FDC_DATAREQ_PENDING) != 0)
+                        Console.Write("DATAREQ_PENDING");
                     Console.WriteLine();
 
                     if ((sect.status & ~(byte)(SectorStatus.DELETED | SectorStatus.MISSING_DATA |
-                        SectorStatus.EXTENDED | SectorStatus.FDC_CRC_ERROR | SectorStatus.FDC_LOSTDATA_ERROR)) != 0)
+                        SectorStatus.EXTENDED | SectorStatus.FDC_CRC_ERROR |
+                        SectorStatus.FDC_DATAREQ_PENDING | SectorStatus.FDC_LOSTDATA_ERROR )) != 0)
                         Console.WriteLine($"\tWARNING:: Unknown sector status flag 0x{sect.status:X2}");
                 }
 
